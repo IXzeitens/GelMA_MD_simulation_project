@@ -1,0 +1,22 @@
+* CHARMM36 monovalent-ion non-bonded parameters
+* Values from Beglov, D. & Roux, B. J. Chem. Phys. 100, 9050 (1994).
+* Compatible with par_all36m_prot.prm + TIP3P; matches the SOD/CLA atom
+* types written by VMD `autoionize` (segment ION, residue/atom name SOD/CLA).
+* This file supplies the NONBONDED block — autoionize generates the
+* corresponding PSF entries (mass, charge, type) directly, so no topology
+* section is needed for NAMD. The ATOMS/MASS cards below are required only by
+* parmed (LAMMPS conversion), which needs the atom type to exist in the
+* parameter set; NAMD ignores the ATOMS section, so it is harmless for MD.
+*
+
+ATOMS
+MASS  -1  SOD   22.989770  ! sodium ion   (Beglov & Roux 1994)
+MASS  -1  CLA   35.450000  ! chloride ion (Beglov & Roux 1994)
+
+NONBONDED nbxmod  5 atom cdiel fshift vatom vdistance vfswitch -
+cutnb 14.0 ctofnb 12.0 ctonnb 10.0 eps 1.0 e14fac 1.0 wmin 1.5
+!atom         ignored    epsilon       Rmin/2
+SOD          0.0       -0.0469000     1.41075   ! sodium
+CLA          0.0       -0.1500000     2.27000   ! chloride
+
+END

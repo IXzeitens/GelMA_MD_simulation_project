@@ -1,0 +1,24 @@
+# Core scientific stack
+numpy>=1.24
+pandas>=2.0
+scipy>=1.10
+matplotlib>=3.7
+
+# Molecular dynamics analysis
+MDAnalysis>=2.6
+mdtraj>=1.9                # secondary structure (DSSP)
+freesasa>=2.2              # solvent-accessible surface area (optional)
+
+# LAMMPS / CHARMM conversion (Stage 5; install via conda preferred)
+# parmed>=4.0              # CHARMM PSF + multi-PRM -> LAMMPS data + coeffs
+                            # Install:  conda install -c conda-forge parmed
+
+# Stationarity & utilities
+statsmodels>=0.14          # Augmented Dickey-Fuller (stationarity test)
+
+# YAML for crosslink_config.yaml
+PyYAML>=6.0
+
+# Optional: slide automation (recreate PowerPoint figures)
+# python-pptx>=0.6
+# Pillow>=10.0

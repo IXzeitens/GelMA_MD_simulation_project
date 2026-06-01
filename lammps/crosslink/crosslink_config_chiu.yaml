@@ -1,0 +1,46 @@
+# Chiu-faithful crosslink config (W.-Y. Chiu 2026, Carbohydr. Polym. Technol.
+# Appl. 13:101057, §2.4 + thesis ch.2). Reproduces Chiu's deterministic
+# distance-only protocol on our Gel-MA system for a decisive percolation test.
+#
+# Faithful to Chiu:
+#   * 7 Å reactive C8-C8 cutoff (Abbott 2013 / Rukmani 2019)
+#   * DETERMINISTIC bonding: every inter-chain pair <=7 Å reacts -> prob = 1.0
+#     (Chiu uses no stochastic acceptance; bonds form for all qualifying pairs)
+#   * 0.1 ns NPT relaxation per iteration
+#   * up to 50 iterations or until converged
+#
+# Deviation (justified): timestep 1 fs (not Chiu's 2 fs) because our protein
+# topology has no SHAKE (SHAKE trips "connected clusters"); 1 fs keeps X-H
+# bonds stable. Step count raised to 100000 so the relaxation TIME is still
+# 0.1 ns, matching Chiu. post_eq (5 ns final NPT) is run separately afterward
+# only if the network percolates (the driver does not auto-run it).
+
+reactive:
+  resname: LMA
+  atom_name: C8
+  charmm_type: CG2DC3
+
+crosslink_cutoff_A: 7.0
+
+prob: 1.0                        # DETERMINISTIC — Chiu has no probability term
+
+exclude_intra_chain: true
+self_avoidance: true
+
+relaxation:
+  ensemble: npt
+  temperature_K: 310
+  pressure_bar: 1.01325
+  timestep_fs: 1.0               # no SHAKE -> 1 fs for stability
+  steps: 100000                  # 0.1 ns at 1 fs (matches Chiu's relaxation time)
+
+iteration:
+  max_iter: 5                    # TEST: 5-iter probe of prob=1.0 effect (Chiu full = 50)
+  converge_when_new_bonds_below: 1
+  post_eq_steps: 0               # final 5 ns NPT done separately if it percolates
+
+post_reaction_retyping:
+  C8: CG321
+  C6: CG311
+new_bond_type:
+  ff_type_pair: [CG321, CG321]

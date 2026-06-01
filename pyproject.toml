@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gelma-md"
+version = "0.1.0"
+description = "Molecular-dynamics pipeline for gelatin methacrylate (GelMA) hydrogels: build, simulate, analyze, crosslink, and measure bulk modulus across degrees of methacrylate substitution."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "IXzeitens" }]
+keywords = ["molecular-dynamics", "GelMA", "hydrogel", "NAMD", "LAMMPS", "CHARMM36", "crosslinking", "bulk-modulus"]
+
+dependencies = [
+    "numpy>=1.24",
+    "pandas>=2.0",
+    "scipy>=1.10",
+    "matplotlib>=3.7",
+    "MDAnalysis>=2.6",
+    "mdtraj>=1.9",
+    "statsmodels>=0.14",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+sasa = ["freesasa>=2.2"]
+# parmed (CHARMM->LAMMPS converter) is best installed via conda:
+#   conda install -c conda-forge parmed
+lammps = ["parmed>=4.0"]
+
+[project.urls]
+Repository = "https://github.com/IXzeitens/GelMA_MD_simulation_project"
+
+# The build/simulate core is the only importable package; workflow/, analysis/,
+# plotting/, and lammps/ are run as standalone scripts (see README quick-start).
+[tool.setuptools]
+packages = ["pipeline"]

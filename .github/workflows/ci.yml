@@ -1,0 +1,34 @@
+name: CI
+
+# Lightweight checks only — no GPU, no NAMD/LAMMPS/VMD needed.
+# Verifies all Python compiles, the pipeline package imports, and the
+# pure-Python box-calculation demo runs.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  compile-and-import:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Byte-compile all sources
+        run: python -m compileall -q pipeline workflow analysis plotting lammps
+
+      - name: Import the pipeline package
+        run: python -c "import sys; sys.path.insert(0, '.'); import pipeline.pipeline, pipeline.calculation, pipeline.paths; print('pipeline import OK')"
+
+      - name: Run box-calculation demo (no external tools)
+        run: python example/demo_calc.py

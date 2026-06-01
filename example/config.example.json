@@ -1,0 +1,80 @@
+{
+    "chain_count": 12,
+    "concentration": 7.4,
+    "polymer_density_g_cm3": 1.3,
+    "water_density_g_cm3": 0.997,
+    "packmol_expansion_factor": 1.2,
+    "software_paths": {
+        "packmol": "packmol.exe",
+        "vmd": "vmd",
+        "namd3": "namd3"
+    },
+    "calculated_M": 2407.562,
+    "calculated_n_water": 20068,
+    "calculated_box_L_Angstrom": 104,
+    "atoms_per_chain": 327,
+    "segments": {
+        "GA": [
+            1,
+            327
+        ],
+        "GB": [
+            328,
+            654
+        ],
+        "GC": [
+            655,
+            981
+        ],
+        "GD": [
+            982,
+            1308
+        ],
+        "GE": [
+            1309,
+            1635
+        ],
+        "GF": [
+            1636,
+            1962
+        ],
+        "GG": [
+            1963,
+            2289
+        ],
+        "GH": [
+            2290,
+            2616
+        ],
+        "GI": [
+            2617,
+            2943
+        ],
+        "GJ": [
+            2944,
+            3270
+        ],
+        "GK": [
+            3271,
+            3597
+        ],
+        "GL": [
+            3598,
+            3924
+        ],
+        "WT3": [
+            3925,
+            33924
+        ],
+        "WT4": [
+            33925,
+            63924
+        ],
+        "WT5": [
+            63925,
+            64128
+        ]
+    },
+    "calculated_n_sodium": 36,
+    "calculated_n_chloride": 0
+}

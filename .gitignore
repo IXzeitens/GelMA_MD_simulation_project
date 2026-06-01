@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# MD outputs (huge, regeneratable)
+*.dcd
+*.coor
+*.coor.old
+*.vel
+*.vel.old
+*.xsc
+*.xsc.old
+*.xst
+*.restart
+*.restart.coor
+*.restart.vel
+*.restart.xsc
+*.lammpstrj
+*.data
+*.in.coeffs
+
+# Logs
+*.log
+*.err
+*.pid
+
+# Build artifacts
+build/
+install/
+_runs/
+
+# --- Optional: CHARMM36 redistribution ---
+# The custom lma.prm is MIT-licensed and SHOULD be committed.
+# The CHARMM36 files are redistributed for reproducibility under MacKerell
+# Lab academic-use terms. If your repo must avoid redistributing them,
+# uncomment the lines below and ship forcefield/DOWNLOAD.md instead.
+# forcefield/par_all36*.prm
+# forcefield/top_all36_prot_HYP_caf_3.txt

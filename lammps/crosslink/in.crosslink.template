@@ -1,0 +1,83 @@
+# =============================================================================
+# LAMMPS crosslink simulation for Gel-MA methacrylate radical polymerisation.
+#
+# Strategy: continuous-NPT run with `fix bond/create` (MOLECULE package),
+# functionally equivalent to a Polymatic 50-iteration loop but in one go.
+# Bond formation events get logged to thermo as `n_xlinks`; when that value
+# plateaus, equilibrium is reached.
+#
+# Required files (in CWD):
+#     project.data         ← from parmed_emit_lammps.py
+#     project.in.coeffs    ← from parmed_emit_lammps.py
+#     crosslink.fix        ← from generate_xlink_fix.py
+#
+# Substitute via -var on command line:
+#     TEMPERATURE          target T in K        (e.g. 310)
+#     PRESSURE_BAR         target P in bar      (e.g. 1.01325)
+#     RUN_STEPS            total run steps      (e.g. 2500000 = 5 ns at 2 fs)
+#     OUT_PREFIX           output basename      (e.g. system_xlink)
+# =============================================================================
+
+units               real
+atom_style          full
+boundary            p p p
+neighbor            2.0 bin
+neigh_modify        delay 0 every 1 check yes
+
+# CHARMM-compatible interaction styles (match parmed_emit output)
+pair_style          lj/charmm/coul/long 10.0 12.0
+bond_style          harmonic
+angle_style         charmm
+dihedral_style      charmm
+improper_style      harmonic
+special_bonds       charmm
+
+# IMPORTANT: when fix bond/create makes new bonds, special_bonds rules need to
+# be updated so the new 1-3 / 1-4 exclusions are honoured. LAMMPS recomputes
+# these automatically as long as we use the default special_bonds CHARMM.
+
+# Topology + coords + force-field coefficients
+read_data           project.data extra/bond/per/atom 4 extra/angle/per/atom 12 &
+                                 extra/dihedral/per/atom 24 extra/improper/per/atom 4
+include             project.in.coeffs
+
+kspace_style        pppm 1.0e-5
+pair_modify         mix arithmetic
+
+# Timestep + (optional) SHAKE constraints.
+# SHAKE with `m 1.008` triggers "connected clusters" errors on protein
+# topologies. For quick validation we use 1 fs without SHAKE. For long
+# production runs, swap in water-specific SHAKE:
+#     fix fSHAKE wateratoms shake 1.0e-6 500 0 b <OH_btype> a <HOH_atype>
+# (look up the water bond / angle type ids in your project.in.coeffs).
+timestep            ${TIMESTEP_FS}
+
+# Crosslink fix (atom types, cutoff and parameter IDs resolved by generator)
+include             crosslink.fix
+
+# NPT ensemble
+fix                 fNPT all npt temp ${TEMPERATURE} ${TEMPERATURE} 100.0 &
+                                  iso ${PRESSURE_BAR} ${PRESSURE_BAR} 1000.0
+
+# Thermo + restart (no dump during minimize — LAMMPS forbids reset_timestep with active dump)
+thermo              500
+restart             50000 ${OUT_PREFIX}.restart1 ${OUT_PREFIX}.restart2
+
+# Long min (Packmol initial may have residual overlaps). Caps:
+#   etol=1e-4 (relative energy tolerance)
+#   ftol=1e-6 (absolute force tolerance, kcal/mol/Å)
+#   max iter = 10000, max eval = 20000
+minimize            1.0e-4 1.0e-6 10000 20000
+reset_timestep      0
+velocity            all create ${TEMPERATURE} 51234 dist gaussian
+
+# Dynamics dump goes here so reset_timestep above is clean
+dump                dCSL all custom 5000 ${OUT_PREFIX}.lammpstrj id type x y z
+dump_modify         dCSL sort id
+
+run                 ${RUN_STEPS}
+
+# Hand-off
+write_data          ${OUT_PREFIX}.data
+write_restart       ${OUT_PREFIX}.restart
+print               "CROSSLINK_RUN_DONE  total_xlinks=${n_xlinks}"

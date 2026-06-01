@@ -1,0 +1,61 @@
+# Per-iteration relaxation template for the crosslink loop.
+# Driven by an external script (Polymatic / fix bond/react / custom Python).
+# Reads current state (after adding new crosslinks), runs 0.1 ns NPT,
+# writes a restart for the next iteration.
+#
+# Driver substitutes:
+#   {{TEMPERATURE}}   simulation temperature in K   (default 310)
+#   {{PRESSURE_BAR}}  target pressure in bar         (default 1.01325)
+#   {{STEPS}}         per-iter relaxation steps      (default 50000 = 0.1 ns @ 2 fs)
+#   {{ITER}}          1-based iteration index        (used in output filename)
+
+units               real
+atom_style          full
+boundary            p p p
+neighbor            2.0 bin
+neigh_modify        delay 0 every 1 check yes
+
+pair_style          lj/charmm/coul/long 10.0 12.0
+bond_style          harmonic
+angle_style         charmm
+dihedral_style      charmm
+improper_style      harmonic
+special_bonds       charmm
+
+# State after this iteration's bond-formation step.
+# extra/*/per/atom headroom lets the driver's newly added crosslink bonds (and
+# any angles/dihedrals around them) be read without "incorrect bonds per atom".
+read_data           iter_{{ITER}}_in.data &
+                    extra/bond/per/atom 4 extra/angle/per/atom 12 &
+                    extra/dihedral/per/atom 24 extra/special/per/atom 12
+include             project.in.coeffs
+
+kspace_style        pppm 1.0e-5
+pair_modify         mix arithmetic
+
+# Timestep — NO SHAKE (SHAKE 'm 1.008' trips "connected clusters" on protein
+# topology). Use 1 fs for stable unconstrained integration during the short
+# relaxation. The driver passes TIMESTEP=1.0 via crosslink_config.yaml.
+timestep            {{TIMESTEP}}
+
+# NPT relaxation
+fix                 fNPT all npt &
+                    temp {{TEMPERATURE}} {{TEMPERATURE}} 100.0 &
+                    iso  {{PRESSURE_BAR}} {{PRESSURE_BAR}} 1000.0
+
+# Thermo / restart
+thermo              500
+thermo_style        custom step temp press vol pe ke etotal density
+restart             {{STEPS}} iter_{{ITER}}.restart1 iter_{{ITER}}.restart2
+
+# Quick re-min before dynamics (catch any geometry stress from the new bond)
+minimize            1.0e-4 1.0e-6 100 1000
+
+# 0.1 ns relaxation
+reset_timestep      0
+velocity            all create {{TEMPERATURE}} 51234 dist gaussian
+run                 {{STEPS}}
+
+# Hand-off state for the next iteration
+write_data          iter_{{ITER}}_out.data
+write_restart       iter_{{ITER}}.restart

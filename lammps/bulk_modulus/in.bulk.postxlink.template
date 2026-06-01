@@ -1,0 +1,73 @@
+# Post-crosslink NPT for V-fluctuation bulk modulus K measurement.
+# Reads `final_crosslinked.data` produced by polymatic_driver.py (already
+# has the new crosslink bonds + retyped atoms baked in).
+#
+# Same NPT protocol as in.bulk.template but:
+#   - reads final_crosslinked.data (not project.data)
+#   - includes project.in.coeffs from 4_bulk/<sys>/ (the new CG321-CG321
+#     bond type is already covered by the existing coeffs)
+#   - skips minimization (data file is already relaxed from xlink driver)
+#
+# Variables (-var on cmd line):
+#   TEMPERATURE       K (310)
+#   PRESSURE_BAR      bar (1.0)
+#   TIMESTEP_FS       fs (1.0)
+#   EQ_STEPS          steps (1000000 = 1 ns @ 1 fs)
+#   PROD_STEPS        steps (4000000 = 4 ns @ 1 fs)
+#   SAMPLE_EVERY      steps (100)
+#   OUT_PREFIX        basename
+# =============================================================================
+
+units               real
+atom_style          full
+boundary            p p p
+neighbor            2.0 bin
+neigh_modify        delay 0 every 1 check yes
+
+pair_style          lj/charmm/coul/long 10.0 12.0
+bond_style          harmonic
+angle_style         charmm
+dihedral_style      charmm
+improper_style      harmonic
+special_bonds       charmm
+
+# Crosslinked structure (from polymatic_driver) + original FF coefficients
+read_data           final_crosslinked.data
+include             project.in.coeffs
+
+kspace_style        pppm 1.0e-5
+pair_modify         mix arithmetic
+
+timestep            ${TIMESTEP_FS}
+
+thermo_style        custom step temp press vol density pe ke etotal
+thermo              500
+
+# No additional minimization — data already relaxed by the xlink driver
+velocity            all create ${TEMPERATURE} 51234 mom yes rot yes dist gaussian
+
+fix                 fNPT all npt temp ${TEMPERATURE} ${TEMPERATURE} 100.0 &
+                                  iso ${PRESSURE_BAR} ${PRESSURE_BAR} 1000.0
+
+restart             100000 ${OUT_PREFIX}.restart1 ${OUT_PREFIX}.restart2
+
+# Equilibration: let the crosslinked network settle at target P
+run                 ${EQ_STEPS}
+
+# Production: sample V and P for K
+variable            Pinst equal press
+variable            Vinst equal vol
+variable            Tinst equal temp
+variable            Dinst equal density
+fix                 fLOG all ave/time ${SAMPLE_EVERY} 1 ${SAMPLE_EVERY} &
+                            v_Pinst v_Vinst v_Tinst v_Dinst &
+                            file ${OUT_PREFIX}.vp.log mode scalar
+
+dump                dProd all custom 50000 ${OUT_PREFIX}.lammpstrj id type x y z
+dump_modify         dProd sort id
+
+run                 ${PROD_STEPS}
+
+write_data          ${OUT_PREFIX}.final.data
+write_restart       ${OUT_PREFIX}.final.restart
+print               "POSTXLINK_BULK_DONE  prefix=${OUT_PREFIX}  P=${PRESSURE_BAR}bar  T=${TEMPERATURE}K"
