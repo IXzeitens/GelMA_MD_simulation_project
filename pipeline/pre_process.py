@@ -5,8 +5,8 @@
 # Description: 
 #   1. Rename the segID in original PDB (index 72~75)
 #   2. Splitting the renamed pdb based on Seg ID
-# File path  : cd C:/Users/user/Desktop/Lab/25August/psfgen
-# VMD path   : cd C:/Users/user/AppData/Roaming/Microsoft/Windows/Start Menu/Programs/University of Illinois/VMD
+# File path  : run from your psfgen working directory
+# VMD path   : ensure VMD is on PATH (or run from VMD's install dir)
 # ========================================
 # pre_process.py
 

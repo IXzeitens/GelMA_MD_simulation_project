@@ -27,11 +27,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Auto-detect: WSL/Linux uses /mnt/c/...; Windows native uses C:\...
-if os.name == "posix":
-    REPO = Path("/mnt/c/Users/User/Desktop/Work/0510")
-else:
-    REPO = Path(r"C:\Users\User\Desktop\Work\0510")
+# Simulation data lives alongside this repo; override with GELMA_REPO if elsewhere.
+REPO = Path(os.environ.get("GELMA_REPO") or Path(__file__).resolve().parents[3])
 BULK_DIR = REPO / "lammps_workflow" / "4_bulk"
 TEMPLATE = BULK_DIR / "in.bulk.template"
 

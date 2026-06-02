@@ -9,17 +9,18 @@ For each system in {Gelatin, Gel1MA, Gel2MA, Gel3MA}:
   4. Output: lammps_workflow/4_bulk/<sys>/{npt3_final.pdb, project.data, project.in.coeffs}
 
 Run from WSL (parmed lives there):
-    ~/miniconda3/bin/python /mnt/c/Users/User/Desktop/Work/0510/lammps_workflow/4_bulk/prep_bulk.py
+    ~/miniconda3/bin/python <gelma_md>/lammps/bulk_modulus/prep_bulk.py
 """
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 
-# Repo root in WSL view
-REPO = Path("/mnt/c/Users/User/Desktop/Work/0510")
+# Simulation data lives alongside this repo; override with GELMA_REPO if elsewhere.
+REPO = Path(os.environ.get("GELMA_REPO") or Path(__file__).resolve().parents[3])
 ARCHIVE = REPO / "production"
 TOOLS = REPO / "lammps_workflow" / "tools"
 OUT_ROOT = REPO / "lammps_workflow" / "4_bulk"

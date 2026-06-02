@@ -19,11 +19,10 @@ from typing import Iterable
 # =============================================================================
 # Paths
 # =============================================================================
-# Auto-detect WSL vs Windows so the same module works under either python
-if os.name == "posix":
-    REPO = Path("/mnt/c/Users/User/Desktop/Work/0510")
-else:
-    REPO = Path(r"C:\Users\User\Desktop\Work\0510")
+# Simulation data (production/) lives alongside this repo, not inside it.
+# Default: the workspace dir that contains gelma_md/ (= repo root's parent).
+# Override with the GELMA_REPO env var if your data sits elsewhere.
+REPO = Path(os.environ.get("GELMA_REPO") or Path(__file__).resolve().parents[2])
 
 PRODUCTION = REPO / "production"
 DATA_ROOT = PRODUCTION / "Data"

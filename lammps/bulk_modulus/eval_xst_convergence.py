@@ -15,9 +15,11 @@ Outputs:
 """
 from __future__ import annotations
 import math
+import os
 from pathlib import Path
 
-REPO = Path(r"C:\Users\User\Desktop\Work\0510")
+# Simulation data lives alongside this repo; override with GELMA_REPO if elsewhere.
+REPO = Path(os.environ.get("GELMA_REPO") or Path(__file__).resolve().parents[3])
 ARCHIVE = REPO / "production"
 OUT_DIR = REPO / "lammps_workflow" / "4_bulk" / "results_xst_eval"
 

@@ -5,6 +5,9 @@ the existing 4 rep1 subprojects (Gelatin, Gel1MA, Gel2MA, Gel3MA), so that
 ensemble averages can be reported as **mean ± SEM (N=2 independent
 Packmol seeds)**.
 
+> `<workspace>` below = the directory that holds both `gelma_md/` and the
+> simulation `production/` tree (the same path you can export as `GELMA_REPO`).
+
 Total wall-clock estimate on the RTX 5060 Ti: **~50 GPU hours**
 (~2.5 days) end to end if rep1 is already at 60 ns.
 
@@ -15,7 +18,7 @@ Total wall-clock estimate on the RTX 5060 Ti: **~50 GPU hours**
 1. **rep1 has converged at 60 ns** — re-run `auto_extend.py` once on top of
    the current 50 ns. Then:
    ```powershell
-   cd C:\Users\User\Desktop\Work\0510\production\Data_scripts
+   cd <workspace>\production\Data_scripts
    python data_analysis.py
    cd ..\plot
    python data_collect.py
@@ -41,7 +44,7 @@ Total wall-clock estimate on the RTX 5060 Ti: **~50 GPU hours**
 Use the production-aligned `clone_subproject.py`:
 
 ```powershell
-cd C:\Users\User\Desktop\Work\0510
+cd <workspace>
 python production/sim_scripts/clone_subproject.py --rep rep2 --seed-base 20260615
 ```
 
@@ -210,7 +213,7 @@ running** by looking at `resolve_replica_input_dir` in data_analysis.py.
 
 Then:
 ```powershell
-cd C:\Users\User\Desktop\Work\0510\production\Data_scripts
+cd <workspace>\production\Data_scripts
 python data_analysis.py
 ```
 

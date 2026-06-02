@@ -66,6 +66,12 @@ Core dependencies: `numpy`, `pandas`, `scipy`, `matplotlib`, `MDAnalysis`,
 
 Set paths in each subsystem's `config.json` under `software_paths`.
 
+> **Data location:** the analysis / plotting / bulk-modulus scripts read the
+> simulation `production/` tree, which lives *alongside* this repo, not inside
+> it. By default they assume `production/` sits in the parent of `gelma_md/`.
+> If your data is elsewhere, point them at it with the `GELMA_REPO` env var:
+> `export GELMA_REPO=/path/to/workspace` (PowerShell: `$env:GELMA_REPO="..."`).
+
 > **LAMMPS for RTX 50-series (Blackwell sm_120):** the conda-forge `lammps`
 > package ships Kokkos 4.3.1 which does **not** recognize Blackwell GPUs.
 > Build from source with `lammps/tools/build_lammps_gpu.sh`

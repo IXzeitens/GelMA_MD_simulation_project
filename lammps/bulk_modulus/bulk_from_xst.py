@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import csv
 import math
+import os
 from pathlib import Path
 
 # 1 Å³ * 1 J/K * 1 K / 1 Å^6 = 1 J/Å³ = 1e30 J/m³ = 1e30 Pa
@@ -27,7 +28,8 @@ KB_J_PER_K = 1.380649e-23
 PA_TO_MPA = 1e-6
 SCALE = 1e30 * KB_J_PER_K * PA_TO_MPA  # = 1.380649e1
 
-REPO = Path(r"C:\Users\User\Desktop\Work\0510")
+# Simulation data lives alongside this repo; override with GELMA_REPO if elsewhere.
+REPO = Path(os.environ.get("GELMA_REPO") or Path(__file__).resolve().parents[3])
 ARCHIVE = REPO / "production"
 OUT_DIR = REPO / "lammps_workflow" / "4_bulk" / "results_xst"
 

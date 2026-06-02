@@ -9,7 +9,15 @@ display resize 800 600
 color Display Background white
 axes location Off
 
-set outDir "C:/Users/User/Desktop/Work/0510/production/plot/snapshot"
+# Workspace root holding production/. Override with the GELMA_REPO env var;
+# otherwise defaults to the current working directory VMD was launched from.
+if {[info exists env(GELMA_REPO)]} {
+    set repo $env(GELMA_REPO)
+} else {
+    set repo [pwd]
+}
+
+set outDir "$repo/production/plot/snapshot"
 file mkdir $outDir
 
 foreach sys $systems {
@@ -20,7 +28,7 @@ foreach sys $systems {
             set outPrefix "${sys}_rep1"
         }
         
-        set basePath "C:/Users/User/Desktop/Work/0510/production/${dirName}/Output"
+        set basePath "$repo/production/${dirName}/Output"
         
         if {![file exists "$basePath/debug_1.psf"]} {
             puts "Skipping $dirName, PSF not found."
