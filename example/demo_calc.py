@@ -28,10 +28,10 @@ def main() -> int:
         print(f"[FATAL] example PDB not found: {PDB}")
         return 1
 
-    # 12 chains at 7.4 wt% (matches the production Gel3MA system).
+    # 12 chains at 7.5 wt% (matches the production Gel3MA system).
     cfg = PipelineConfig(
         chain_count=12,
-        concentration=7.4,
+        concentration=7.5,
         polymer_density_g_cm3=1.3,
         water_density_g_cm3=0.997,
         packmol_expansion_factor=1.20,

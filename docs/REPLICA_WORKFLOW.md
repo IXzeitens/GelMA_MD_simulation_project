@@ -102,7 +102,7 @@ the original 4 systems.
 
 ```
 [Input] Gel-chain 數量 (default=12):
-[Input] 目標濃度 wt% (default=7.4):
+[Input] 目標濃度 wt% (default=7.5):
 ```
 
 Two options:

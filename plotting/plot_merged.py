@@ -68,11 +68,11 @@ def _fig_path(stem: str) -> Path:
     """Output path for a figure stem, honoring the active per-rep suffix."""
     return PLOT_ROOT / f"{stem}{_OUT_SUFFIX}.png"
 
-# Concentration registry — single 7.4 wt% point in current production. When
+# Concentration registry — single 7.5 wt% point in current production. When
 # the high-conc scan (10/15/20%) returns this lets us add grouped bars
 # without rewriting the panel function.
 CONCENTRATIONS: list[tuple[str, str]] = [
-    ("7.4 wt%", "#5a9fd4"),     # placeholder — actual bar color comes from DS gradient below
+    ("7.5 wt%", "#5a9fd4"),     # placeholder — actual bar color comes from DS gradient below
 ]
 
 # DS gradient — matches Chiu Fig 7 convention ("light to dark blue bars
@@ -759,14 +759,6 @@ def figure_M3b_RDF_detail(df: pd.DataFrame) -> None:
     fig.suptitle("MA–MA radial distribution (vinyl C8–C8)",
                  fontsize=13, fontweight="bold", y=1.00)
     fig.tight_layout(rect=(0, 0.06, 1, 0.97))
-
-    # Footer in Chiu caption-style. N(R) uses partner-pool density
-    # ((N_chains−1)·n_MA/chain) so cross-chain partners are correctly counted.
-    fig.text(0.5, 0.01,
-             "Dotted vertical line: 7 Å Polymatic crosslink threshold.   "
-             f"Concentration {CONCENTRATIONS[0][0]}, replica-averaged g(r) "
-             "(rep1 + rep2 when available).",
-             ha="center", va="bottom", fontsize=9, color="#555")
 
     save_fig(fig, out)
     plt.close(fig)

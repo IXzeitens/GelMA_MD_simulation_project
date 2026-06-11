@@ -17,7 +17,7 @@ class SoftwarePaths:
 @dataclass
 class PipelineConfig:
     chain_count: int = 3
-    concentration: float = 7.4
+    concentration: float = 7.5
     polymer_density_g_cm3: float = 1.3
     water_density_g_cm3: float = 0.997
     packmol_expansion_factor: float = 1.05

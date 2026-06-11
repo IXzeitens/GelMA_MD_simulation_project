@@ -17,7 +17,7 @@ Placeholder. Intended to be a copy-pasteable Methods section listing:
 - LMA grafting: per-chain Bernoulli RNG with DS = 0 / 33 / 67 / 100 %
   → Gelatin, Gel1MA, Gel2MA, Gel3MA respectively
 - 12 chains per system
-- Packmol packing to ~7.4 wt% polymer (cubic box, water-fill)
+- Packmol packing to ~7.5 wt% polymer (cubic box, water-fill)
 - Ion balancing: VMD autoionize, neutralize + 0.15 M NaCl
 
 ## Simulation protocol (NAMD 3.0.2)

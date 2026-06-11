@@ -9,7 +9,7 @@ The project studies how the **degree of methacrylate substitution (DS)**
 controls the conformation, interaction network, and mechanical properties
 of gelatin hydrogels. Four DS levels are modeled: **0 % (Gelatin), 33 %
 (Gel1MA), 67 % (Gel2MA), 100 % (Gel3MA)**, each as 12 chains in a
-~7.4 wt% water box.
+~7.5 wt% water box.
 
 ```
  ┌──────────┐   ┌──────────┐   ┌───────────┐   ┌──────────┐   ┌──────────┐
@@ -135,7 +135,7 @@ python lammps/bulk_modulus/bulk_from_xst.py --parts 2 3 --skip-frac 0.1
 
 | Stage | Method | Key parameters |
 |---|---|---|
-| Box assembly | Packmol + VMD autoionize | 7.4 wt%, 1.20 expansion factor, Na⁺ neutralized |
+| Box assembly | Packmol + VMD autoionize | 7.5 wt%, 1.20 expansion factor, Na⁺ neutralized |
 | Equilibration | NAMD 3 NPT, Langevin piston | 310 K, 1 atm, 2 fs, rigidBonds, CUDASOAintegrate |
 | Force field | CHARMM36m + CGenFF (LMA) + TIP3P | 12 Å cutoff, PME 1.0 Å grid |
 | Bulk modulus | NPT volume fluctuation: K = ⟨V⟩·k_B·T / σ²_V | 310 K, autocorrelation-based σ_K |

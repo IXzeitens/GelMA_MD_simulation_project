@@ -1,6 +1,6 @@
 {
     "chain_count": 12,
-    "concentration": 7.4,
+    "concentration": 7.5,
     "polymer_density_g_cm3": 1.3,
     "water_density_g_cm3": 0.997,
     "packmol_expansion_factor": 1.2,
@@ -10,7 +10,7 @@
         "namd3": "namd3"
     },
     "calculated_M": 2407.562,
-    "calculated_n_water": 20068,
+    "calculated_n_water": 19779,
     "calculated_box_L_Angstrom": 104,
     "atoms_per_chain": 327,
     "segments": {
