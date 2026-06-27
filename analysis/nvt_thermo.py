@@ -17,7 +17,7 @@ Production-aligned copy. The original lived at
 ``_legacy/legacy_scripts/nvt_thermo.py`` and inherited its rcParams from
 ``0511_plot.py``; here we instead reuse :func:`apply_paper_style` from
 ``production/plot/_shared.py`` so the figure stays visually consistent with
-the M-series (``plot_merged.py``).
+the M-series (``plot_merge.py``).
 """
 from __future__ import annotations
 

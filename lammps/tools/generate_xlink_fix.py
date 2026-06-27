@@ -77,6 +77,18 @@ def load_psf(psf_path: Path, top_path: Path, par_paths: list[Path]):
         shutil.rmtree(scratch, ignore_errors=True)
 
     psf = CharmmPsfFile(str(psf_path))
+    # VMD autoionize ions (SOD/CLA/...) carry no MASS in the protein topology,
+    # so load_parameters() can't resolve their atom_type and aborts with
+    # "Could not find atom type for SOD". They never participate in MA-MA
+    # crosslink bonds/angles/dihedrals, so strip them before parameter
+    # assignment — polymer (protein/LMA) type detection is unaffected.
+    # (parmed_emit_lammps reads ion masses straight from the PSF, so it never
+    # hit this; only the strict load_parameters path here does.)
+    for _ion in ("SOD", "CLA", "POT", "CAL", "MG", "CES", "ZN2", "LIT", "RUB", "BAR"):
+        try:
+            psf.strip(f":{_ion}")
+        except Exception:
+            pass
     psf.load_parameters(params)
     return psf
 

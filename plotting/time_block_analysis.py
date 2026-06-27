@@ -20,7 +20,10 @@ Grade rubric (worst of the three):
 
 Outputs:
   * time_block_summary.csv             one row per (system, metric)
-  * Figure_TimeBlock_Convergence.png   per-metric facet of block-mean trajectories
+
+The per-metric facet figure (Figure_TimeBlock_Convergence.png) is drawn by
+`plot_merge.py --figs CONVERGENCE`, which reads the CSV written here. This
+script is the numeric half (grade + CSV); plot_merge owns all the figures.
 
 Usage:
   python time_block_analysis.py                    # default 5 blocks, warmup 5 ns
@@ -39,7 +42,6 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).parent))
 from _shared import (  # noqa: E402
@@ -47,9 +49,7 @@ from _shared import (  # noqa: E402
     PLOT_ROOT,
     SYSTEMS,
     SYSTEM_ORDER,
-    apply_paper_style,
     ensemble_csv,
-    save_fig,
 )
 
 POST_WARMUP_NS_DEFAULT = 5.0
@@ -190,52 +190,6 @@ def analyze_one_system(sys_name: str, warmup_ns: float, n_blocks: int
     return rows
 
 
-def plot_block_trajectories(df: pd.DataFrame, out: Path, n_blocks: int) -> None:
-    """One subplot per metric, lines per system showing block-mean evolution."""
-    metrics = list(dict.fromkeys(df["metric"].tolist()))  # preserve order
-    n = len(metrics)
-    if n == 0:
-        print("  [WARN] nothing to plot", file=sys.stderr)
-        return
-    ncols = 3
-    nrows = (n + ncols - 1) // ncols
-    fig, axes = plt.subplots(nrows, ncols, figsize=(ncols * 3.8, nrows * 2.9))
-    axes_flat = np.array(axes).flatten()
-
-    for ax, met in zip(axes_flat, metrics):
-        sub = df[df["metric"] == met]
-        if sub.empty:
-            ax.set_visible(False)
-            continue
-        for _, r in sub.iterrows():
-            t = [r[f"block_{i + 1}_t_ns"] for i in range(n_blocks)]
-            y = [r[f"block_{i + 1}_mean"] for i in range(n_blocks)]
-            s = [r[f"block_{i + 1}_sem"] for i in range(n_blocks)]
-            ax.errorbar(t, y, yerr=s,
-                        color=SYSTEMS[r["system"]].color,
-                        marker="o", markersize=4, capsize=2, lw=1.2,
-                        label=f"{r['system']} [{r['grade']}]")
-        r0 = sub.iloc[0]
-        ax.set_title(r0["label"], fontsize=9, loc="left", fontweight="bold")
-        ax.set_xlabel("Time (ns)", fontsize=8)
-        ylab = r0["unit"] if r0["unit"] else "value"
-        ax.set_ylabel(ylab, fontsize=8)
-        ax.tick_params(labelsize=7)
-        ax.grid(alpha=0.3, lw=0.4)
-        ax.legend(fontsize=6, loc="best", frameon=False)
-
-    for ax in axes_flat[len(metrics):]:
-        ax.set_visible(False)
-
-    fig.suptitle(
-        f"Time-block convergence (n_blocks={n_blocks}, post-warmup)",
-        fontsize=12, fontweight="bold", y=1.005,
-    )
-    fig.tight_layout()
-    save_fig(fig, out)
-    plt.close(fig)
-
-
 def print_grade_overview(df: pd.DataFrame) -> None:
     print("\n=== Convergence grades (worst of drift / scatter / halves) ===")
     metrics = list(dict.fromkeys(df["metric"].tolist()))
@@ -291,12 +245,9 @@ def main() -> int:
                     help="Number of equal-time blocks. Default 5.")
     ap.add_argument("--out-csv", type=Path,
                     default=PLOT_ROOT / "time_block_summary.csv")
-    ap.add_argument("--out-fig", type=Path,
-                    default=PLOT_ROOT / "Figure_TimeBlock_Convergence.png")
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args()
 
-    apply_paper_style()
     all_rows: list[dict] = []
     for sys_name in SYSTEM_ORDER:
         rows = analyze_one_system(sys_name, args.warmup, args.n_blocks)
@@ -315,9 +266,7 @@ def main() -> int:
     args.out_csv.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(args.out_csv, index=False, encoding="utf-8")
     print(f"\nwrote {len(df)} rows -> {args.out_csv.name}")
-
-    plot_block_trajectories(df, args.out_fig, args.n_blocks)
-    print(f"wrote -> {args.out_fig.name}")
+    print("  (figure: run  python plot_merge.py --figs CONVERGENCE)")
 
     if not args.quiet:
         print_grade_overview(df)

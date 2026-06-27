@@ -44,6 +44,7 @@ default each time (also gives independence but is non-reproducible).
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import re
 import shutil
@@ -124,8 +125,25 @@ def _seed_for(rep_label: str, base: int) -> int:
     return base + n * SEED_STRIDE
 
 
+def _patch_concentration(config_path: Path, conc: float) -> None:
+    """Set polymer wt%% in a cloned config.json and clear the cached
+    n_water / box so the new concentration is the single source of truth.
+
+    pipeline.run() always recomputes n_water + box from cfg.concentration
+    (calculation.compute_system_params → _record_calculation), so clearing
+    the cache is cosmetic — it just avoids a misleading stale config.json
+    sitting before the build runs.
+    """
+    data = json.loads(config_path.read_text(encoding="utf-8"))
+    data["concentration"] = conc
+    data["calculated_n_water"] = None
+    data["calculated_box_L_Angstrom"] = None
+    config_path.write_text(json.dumps(data, indent=4, ensure_ascii=False) + "\n",
+                           encoding="utf-8")
+
+
 def clone(src_name: str, dest_name: str, *, seed: int | None,
-          force: bool = False) -> bool:
+          force: bool = False, concentration: float | None = None) -> bool:
     src = ROOT_DIR / src_name
     dest = ROOT_DIR / dest_name
     if not src.exists():
@@ -150,6 +168,16 @@ def clone(src_name: str, dest_name: str, *, seed: int | None,
             log.info("Seed = %d injected into %s", seed, nvt_conf.relative_to(ROOT_DIR))
         else:
             log.warning("script/NVT.conf missing in clone — skipped seed injection.")
+
+    # Override polymer concentration (wt%) for the mechanics-arm variants.
+    if concentration is not None:
+        cfg_json = dest / "config.json"
+        if cfg_json.exists():
+            _patch_concentration(cfg_json, concentration)
+            log.info("Concentration → %.3g wt%% in %s (n_water/box recompute at build)",
+                     concentration, cfg_json.relative_to(ROOT_DIR))
+        else:
+            log.warning("config.json missing in clone — cannot set concentration.")
 
     # Sanity-check the clone has the bare essentials.
     needed = ["config.json", "main.py", "input", "packmol", "script"]
@@ -187,6 +215,11 @@ def main() -> int:
                         help="Skip seed injection (use NAMD time-based default).")
     parser.add_argument("--systems", nargs="*",
                         help="Bulk mode: subset of base systems (default: all 4).")
+    parser.add_argument("--concentration", type=float, default=None,
+                        help="Override polymer wt%% in the cloned config.json "
+                             "(e.g. --concentration 15). n_water + box auto-recompute "
+                             "at build time. Use to spin up concentration variants for "
+                             "the LAMMPS mechanics arm (10/15/20%%, Chiu-aligned).")
     parser.add_argument("--force", action="store_true",
                         help="Overwrite destination if it exists.")
     args = parser.parse_args()
@@ -207,7 +240,8 @@ def main() -> int:
         for base in bases:
             dest = f"{base}_{args.rep}"
             log.info("=== %s → %s ===", base, dest)
-            if clone(base, dest, seed=seed_per_rep, force=args.force):
+            if clone(base, dest, seed=seed_per_rep, force=args.force,
+                     concentration=args.concentration):
                 ok += 1
             else:
                 failed += 1
@@ -216,8 +250,10 @@ def main() -> int:
 
     if args.src and args.dest:
         seed = None if args.no_seed else args.seed
-        log.info("Single clone: %s → %s, seed=%s", args.src, args.dest, seed)
-        return 0 if clone(args.src, args.dest, seed=seed, force=args.force) else 1
+        log.info("Single clone: %s → %s, seed=%s, conc=%s",
+                 args.src, args.dest, seed, args.concentration)
+        return 0 if clone(args.src, args.dest, seed=seed, force=args.force,
+                          concentration=args.concentration) else 1
 
     parser.error("Either --rep, or --src + --dest must be supplied.")
     return 2

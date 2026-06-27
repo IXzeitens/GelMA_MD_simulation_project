@@ -56,7 +56,7 @@ SYSTEM_ORDER: tuple[str, ...] = tuple(SYSTEMS.keys())
 
 
 # =============================================================================
-# Equilibrium window — matches _legacy analysis_config.EQ_WINDOW_NS
+# Equilibrium window: canonical paper-ready last-5-ns sample.
 # =============================================================================
 DT_PS = 100.0                # ps per dcd frame (dcdfreq 50000 × 2 fs)
 EQ_WINDOW_NS = 5.0           # last 5 ns of each trajectory = "equilibrium sample"
@@ -173,6 +173,7 @@ def apply_paper_style() -> None:
         "axes.linewidth":    0.8,
         "xtick.major.width": 0.8,
         "ytick.major.width": 0.8,
+        "axes.grid":         False,   # never draw background gridlines
         "savefig.dpi":       300,
         "savefig.bbox":      "tight",
         "figure.dpi":        120,

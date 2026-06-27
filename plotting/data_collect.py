@@ -101,6 +101,39 @@ def equilibrium_mask(time_ns: pd.Series, window_ns: float) -> pd.Series:
     return time_ns >= (t_max - window_ns)
 
 
+def integrated_autocorr_time_frames(x: np.ndarray) -> float:
+    """Integrated autocorrelation time τ_int in units of frames.
+
+    τ_int = 1 + 2·Σ_{k≥1} ρ(k), truncated at the first non-positive ρ(k)
+    (the standard "initial positive sequence" estimator). For an
+    uncorrelated series τ_int = 1; effective sample size N_eff = N / τ_int.
+
+    Why this matters: consecutive MD frames (here 0.1 ns apart) are NOT
+    independent. The naive SEM = std/√N treats N correlated frames as N
+    independent samples and *underestimates* the error by √(τ_int). Standard
+    MD practice corrects for this (Flyvbjerg & Petersen 1989; Sokal 1997).
+
+    Capped at N/4 because τ_int is unreliable once it approaches the series
+    length.
+    """
+    x = np.asarray(x, dtype=float)
+    n = len(x)
+    if n < 4:
+        return 1.0
+    x = x - x.mean()
+    var = x.var()
+    if var <= 0:
+        return 1.0
+    # ρ(k) via unbiased autocovariance / variance
+    acf = np.correlate(x, x, mode="full")[n - 1:] / (np.arange(n, 0, -1) * var)
+    tau = 1.0
+    for k in range(1, n):
+        if acf[k] <= 0:
+            break
+        tau += 2.0 * acf[k]
+    return float(min(max(tau, 1.0), n / 4.0))
+
+
 def _drift_and_stable(t: np.ndarray, y: np.ndarray, eq_window_ns: float,
                       mean_eq: float) -> tuple[float, float, float, float, float]:
     """Per-metric stationarity diagnostic.
@@ -206,14 +239,22 @@ def collect_one_system(sys_name: str, window_ns: float,
 
         # SEM: take the average per-frame SEM (if columns exist) over the eq window.
         # In single-replica case the Ensemble SEM column is empty → fall back to
-        # std_across_frames / sqrt(n_eq) as a within-trajectory uncertainty.
+        # the AUTOCORRELATION-CORRECTED within-trajectory SEM:
+        #     SEM = std_across / sqrt(N_eff),  N_eff = n_eq / τ_int
+        # NOT std/sqrt(n_eq): consecutive 0.1-ns frames are correlated
+        # (τ_int ≈ 0.1–0.7 ns here → N_eff ≈ 7–40, not 51), so the naive form
+        # underestimates the error by ≈ √τ_int (~1.1–2.7×, worst for slow
+        # metrics like Rg). See integrated_autocorr_time_frames().
+        n_eff = float("nan")
         if sem_col in eq.columns:
             sem_vals = pd.to_numeric(eq[sem_col], errors="coerce").dropna()
             sem_eq = float(sem_vals.mean()) if len(sem_vals) else float("nan")
         else:
             sem_eq = float("nan")
         if math.isnan(sem_eq) and not math.isnan(std_across) and n_eq > 1:
-            sem_eq = std_across / math.sqrt(n_eq)
+            tau = integrated_autocorr_time_frames(vals.to_numpy())
+            n_eff = n_eq / tau
+            sem_eq = std_across / math.sqrt(n_eff)
 
         # MA-only metrics are physically zero/undefined for Gelatin (no LMA
         # residues). Mark them NaN rather than 0 so plots skip cleanly.

@@ -9,7 +9,12 @@ from pathlib import Path
 from .calculation import SystemParams, compute_system_params
 from .config import PipelineConfig
 from .namd_runner import NAMD_STAGES, prepare_configs, run_stage
-from .packmol_runner import run_packmol, write_input_file
+from .packmol_runner import (
+    PACKMOL_NLOOP,
+    PACKMOL_TOLERANCE_ANGSTROM,
+    run_packmol,
+    write_input_file,
+)
 from .paths import ProjectPaths
 from .pdb_utils import count_atoms
 from .psfgen_runner import (
@@ -45,6 +50,48 @@ def _pick_input_pdb(input_dir: Path) -> Path:
     return candidates[0]
 
 
+def _parse_variants(input_dir: Path) -> list[tuple[Path, int]] | None:
+    """Return [(variant_pdb, count), ...] if Input/variants/manifest.txt exists.
+
+    Enables the balanced-random methacrylation design: the 12 gel-chains carry
+    their MA group(s) at randomly distributed Lys positions, so the box is packed
+    from several distinct variant chains (each ``number N``) instead of N copies
+    of one chain. All variants share the same atom count (same MA count), so the
+    downstream split/psfgen/ionize path is unchanged. Returns None for the
+    classic single-chain systems (Gelatin, Gel3MA).
+    """
+    man = input_dir / "variants" / "manifest.txt"
+    if not man.exists():
+        return None
+    out: list[tuple[Path, int]] = []
+    for ln in man.read_text(encoding="utf-8").splitlines():
+        ln = ln.strip()
+        if ln.startswith("chain_") and "number" in ln:
+            p = ln.split()
+            out.append((input_dir / "variants" / p[0], int(p[2])))
+    return out or None
+
+
+def _write_variant_packmol(
+    inp_path: Path, variants: list[tuple[Path, int]], water_pdb: Path,
+    n_water: int, output_pdb: Path, box_half: int,
+) -> None:
+    """Multi-structure Packmol input: each variant chain placed ``number N``,
+    then water. Chains are emitted first (in manifest order) so the uniform
+    plan_segments slicing maps each segment to exactly one chain."""
+    box = f"-{box_half} -{box_half} -{box_half} {box_half} {box_half} {box_half}"
+    blocks = [
+        f"seed -1\ntolerance {PACKMOL_TOLERANCE_ANGSTROM}\nnloop {PACKMOL_NLOOP}\n"
+        f"writebad yes\nfiletype pdb\noutput {output_pdb.as_posix()}\n"
+    ]
+    for vp, n in variants:
+        blocks.append(f"structure {vp.as_posix()}\n  number {n}\n  inside box {box}\nend structure\n")
+    blocks.append(
+        f"structure {water_pdb.as_posix()}\n  number {n_water}\n  inside box {box}\nend structure\n"
+    )
+    inp_path.write_text("\n".join(blocks), encoding="utf-8")
+
+
 def _record_calculation(cfg: PipelineConfig, params: SystemParams, atoms_per_chain: int) -> None:
     cfg.calculated_M = params.molecular_weight
     cfg.calculated_n_water = params.n_water
@@ -75,12 +122,21 @@ def run(paths: ProjectPaths, *, interactive: bool = True) -> None:
         cfg = prompt_user_settings(cfg)
         cfg.save(paths.config)
 
-    target_pdb = _pick_input_pdb(paths.input_dir)
-    log.info("Processing model: %s", target_pdb.name)
+    # Resolve chains: balanced-random MA variants (Gel1/2MA) or single chain.
+    variants = _parse_variants(paths.input_dir)
+    if variants:
+        rep_pdb = variants[0][0]
+        n_total = sum(n for _, n in variants)
+        if n_total != cfg.chain_count:
+            raise ValueError(f"variant counts {n_total} != chain_count {cfg.chain_count}")
+        log.info("Variant build: %d distinct MA variants, %d chains total", len(variants), n_total)
+    else:
+        rep_pdb = _pick_input_pdb(paths.input_dir)
+        log.info("Processing model: %s", rep_pdb.name)
 
-    # Step 1
-    params = compute_system_params(target_pdb, cfg)
-    atoms_per_chain = count_atoms(target_pdb)
+    # Step 1 — system params from the (representative) chain
+    params = compute_system_params(rep_pdb, cfg)
+    atoms_per_chain = count_atoms(rep_pdb)
     log.info(
         "M=%s g/mol | n_water=%s | L=%s Å | atoms/chain=%s",
         params.molecular_weight, params.n_water, params.box_length_angstrom, atoms_per_chain,
@@ -88,22 +144,27 @@ def run(paths: ProjectPaths, *, interactive: bool = True) -> None:
     _record_calculation(cfg, params, atoms_per_chain)
     cfg.save(paths.config)
 
-    # Step 2 & 3
+    # Step 2 & 3 — pack
     inp_path = paths.packmol_dir / PACKMOL_INPUT_FILENAME
-    wb_pdb = paths.temp_dir / f"{target_pdb.stem}_wb.pdb"
-    write_input_file(
-        inp_path=inp_path,
-        chain_pdb=target_pdb,
-        chain_count=cfg.chain_count,
-        water_pdb=paths.packmol_dir / "water.pdb",
-        n_water=params.n_water,
-        output_pdb=wb_pdb,
-        box_half=params.box_length_angstrom // 2,
-    )
+    wb_pdb = paths.temp_dir / f"{rep_pdb.stem}_wb.pdb"
+    box_half = params.box_length_angstrom // 2
+    water_pdb = paths.packmol_dir / "water.pdb"
+    if variants:
+        _write_variant_packmol(inp_path, variants, water_pdb, params.n_water, wb_pdb, box_half)
+    else:
+        write_input_file(
+            inp_path=inp_path,
+            chain_pdb=rep_pdb,
+            chain_count=cfg.chain_count,
+            water_pdb=water_pdb,
+            n_water=params.n_water,
+            output_pdb=wb_pdb,
+            box_half=box_half,
+        )
     log.info("Executing Packmol...")
     run_packmol(paths.packmol_dir / cfg.software_paths.packmol, inp_path)
 
-    # Step 4
+    # Step 4 — split (uniform atoms_per_chain; all variants share size)
     total_atoms = count_atoms(wb_pdb)
     segments = plan_segments(cfg.chain_count, atoms_per_chain, total_atoms)
     _record_segments(cfg, segments)

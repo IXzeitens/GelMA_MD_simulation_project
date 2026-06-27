@@ -107,7 +107,7 @@ contact maps, RDF, DSSP, SASA, density profiles) + block-averaged statistics.
 ```bash
 python plotting/data_collect.py      # aggregate cross-system summary
 python plotting/plot_per_system.py   # 7 themed figures per subsystem
-python plotting/plot_merged.py       # cross-system comparison figures
+python plotting/plot_merge.py        # cross-system comparison figures
 ```
 All figures output as 300 dpi PNG + vector PDF (Okabe-Ito colorblind-safe palette).
 

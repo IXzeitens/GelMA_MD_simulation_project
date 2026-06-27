@@ -54,6 +54,7 @@ from analysis_config import (
     SYSTEMS,
     WATER_H_SEL,
     WATER_O_SEL,
+    list_production_dcds,
     rolling_average,
 )
 
@@ -280,9 +281,15 @@ def compute_rmsf_per_chain(
     out: dict[str, pd.DataFrame] = {}
     for name in chain_names:
         u_chain = mda.Universe(str(psf_path), str(aligned_dcd_path))
-        ca = u_chain.select_atoms(f"segid {name} and name CA")
+        # Use the alpha carbon of every residue. Standard residues name it
+        # "CA"; LMA (methacrylated Lys) renames its alpha carbon to "C22"
+        # (CG311, bonded to backbone N + carbonyl C + HA + sidechain C20).
+        # Without the C22 branch every modified residue is silently dropped
+        # from the RMSF trace (e.g. Gel3MA loses res 6/15/23 entirely).
+        ca = u_chain.select_atoms(
+            f"segid {name} and (name CA or (resname LMA and name C22))")
         if len(ca) == 0:
-            log.warning("RMSF: chain %s has 0 CA atoms; skipping.", name)
+            log.warning("RMSF: chain %s has 0 alpha-carbon atoms; skipping.", name)
             del u_chain
             continue
         align.AlignTraj(
@@ -378,15 +385,18 @@ def parse_namd_log(log_path: Path) -> pd.DataFrame:
 
 
 def compute_persistence_length(chain) -> float:
-    """Estimate persistence length Lp from Cα-Cα bond vector autocorrelation.
+    """Estimate persistence length Lp from backbone-N virtual-bond autocorrelation.
 
     Lp = -L / ln(<cos θ>)  (Kratky-Porod / worm-like chain)
 
-    Where L = mean Cα-Cα distance and θ = angle between consecutive Cα-Cα
-    vectors. Single value per chain, computed on the current frame.
-    Returns 0.0 if the chain is too short or has no correlation.
+    2026-06-03 residue-agnostic: uses backbone **N** (one per residue, incl LMA)
+    instead of `name CA`. LMA (modified Lys) has NO CA atom, so a CA trace skipped
+    every LMA → gaps that grew with DS and inflated Lp (a DS-confound; CA-method
+    gave a spurious monotonic ↑, N-method gives a peak at 67% — see METHOD_FIX_LOG).
+    Every residue (standard + LMA) has a backbone N → gap-free. Single value per
+    chain on the current frame; 0.0 if too short.
     """
-    ca = chain.select_atoms("name CA")
+    ca = chain.select_atoms("name N")
     if len(ca) < 3:
         return 0.0
     pos = ca.positions
@@ -499,13 +509,13 @@ def resolve_replica_input_dir(sys_name: str, rep: str) -> Path | None:
 def _build_reference_universe(psf: Path, first_dcd: Path, ref_positions: np.ndarray) -> mda.Universe:
     """Return a fresh Universe whose protein coordinates equal the supplied average."""
     ref = mda.Universe(str(psf), str(first_dcd))
-    ref.select_atoms("protein").positions = ref_positions
+    ref.select_atoms("(protein or resname LMA)").positions = ref_positions  # incl LMA
     return ref
 
 
 def _compute_quasi_equilibrium_reference(u: mda.Universe, eq_window_frames: int) -> np.ndarray:
     """Average protein positions over the trailing ``eq_window_frames``."""
-    protein = u.select_atoms("protein")
+    protein = u.select_atoms("(protein or resname LMA)")  # incl LMA (consistent w/ ref)
     n_frames = len(u.trajectory)
     start = max(0, n_frames - eq_window_frames)
     accumulator = np.zeros((len(protein), 3))
@@ -705,8 +715,10 @@ def _compute_sasa_arrays(
         return None, None
 
 
-def _compute_rdfs(chains: dict, has_ma: bool) -> dict:
-    """Ensemble-averaged InterRDFs over ALL unique chain pairs.
+def _compute_rdfs(chains: dict, has_ma: bool,
+                  psf_path: Path | None = None,
+                  dcd_files: list[Path] | None = None) -> dict:
+    """Ensemble-averaged InterRDFs over ALL unique inter-chain pairs.
 
     Previous (3-chain) code hard-coded {(GA,GB),(GA,GC),(GB,GC)}; with the
     big-box 12-chain system that would sample only 3 of 66 pairs — and the
@@ -716,9 +728,21 @@ def _compute_rdfs(chains: dict, has_ma: bool) -> dict:
     ensemble RDF that's invariant to packmol labelling and statistically
     meaningful at any chain count.
 
+    PBC NOTE (2026-06-22): inter-chain RDFs MUST use raw, box-wrapped
+    coordinates with valid minimum-image PBC — NOT the unwrap+center+aligned
+    trajectory used for the per-chain metrics. ``unwrap()`` pushes atoms
+    outside [0,L] and ``AlignTraj`` rotates coordinates without rotating the
+    box, so minimum-image folds cross-boundary pairs to spurious sub-vdW
+    (<2 Å, even 0.15 Å) distances — an unphysical small-r RDF tail. When the
+    raw inputs are supplied we rebuild a transform-free universe here and
+    re-slice the chains on it.
+
     Returns {label: (bins, g_r)} tuples (not InterRDF objects).
     """
     rdfs: dict = {}
+    if psf_path is not None and dcd_files:
+        u_raw = mda.Universe(str(psf_path), *[str(d) for d in dcd_files])
+        chains = {n: u_raw.select_atoms(f"segid {n}") for n in chains.keys()}
     names = list(chains.keys())
     pairs = [(a, b) for i, a in enumerate(names) for b in names[i + 1:]]
 
@@ -791,17 +815,24 @@ def process_replica(sys_name: str, rep: str, data_out_dir: Path) -> bool:
         return False
 
     psf_path = input_dir / "debug_1.psf"
-    dcd_files = sorted(input_dir.glob("system_npt_part*.dcd"))
-    dcd_files = _filter_readable_dcds(dcd_files)
+    # list_production_dcds drops part 1 (equilibration) and natural-sorts the rest.
+    dcd_files = _filter_readable_dcds(list_production_dcds(input_dir))
     if not psf_path.exists() or not dcd_files:
-        log.info("[%s/%s] No usable PSF or DCD files in %s; skipping.", sys_name, rep, input_dir)
+        log.info("[%s/%s] No usable PSF or DCD files in %s (note: part1 is "
+                 "intentionally skipped — see ANALYSIS_SKIP_PARTS); skipping.",
+                 sys_name, rep, input_dir)
         return False
 
-    log.info("[%s/%s] Processing %d DCD chunk(s) in %s", sys_name, rep, len(dcd_files), input_dir)
+    log.info("[%s/%s] Processing %d DCD chunk(s) (from %s) in %s",
+             sys_name, rep, len(dcd_files), dcd_files[0].name, input_dir)
 
     try:
         u_initial = mda.Universe(str(psf_path), *[str(d) for d in dcd_files])
-        protein_initial = u_initial.select_atoms("protein")
+        # 2026-06-03 residue-agnostic: include LMA so the modified-Lys residues are
+        # PBC-unwrapped/centred WITH their chain. The bare `protein` macro excludes
+        # the non-standard LMA, which could leave its atoms on the wrong periodic
+        # image → corrupting every per-chain metric (Rg/Ree/...) at LMA positions.
+        protein_initial = u_initial.select_atoms("(protein or resname LMA)")
         n_frames = len(u_initial.trajectory)
 
         # Unwrap PBC + recentre protein in the box
@@ -830,7 +861,9 @@ def process_replica(sys_name: str, rep: str, data_out_dir: Path) -> bool:
             log.info("[%s/%s] Aligning trajectory → %s", sys_name, rep, aligned_dcd.name)
             align.AlignTraj(
                 u_initial, ref_universe,
-                select="protein and backbone",
+                # residue-agnostic backbone: `backbone` macro excludes LMA; list the
+                # backbone atom names so LMA's N/C are included (LMA has no CA/O).
+                select="(protein or resname LMA) and (name N or name CA or name C or name O)",
                 filename=str(aligned_dcd),
                 in_memory=False,
             ).run()
@@ -839,7 +872,7 @@ def process_replica(sys_name: str, rep: str, data_out_dir: Path) -> bool:
             u = mda.Universe(str(psf_path), str(aligned_dcd))
             try:
                 _export_metrics_for_universe(
-                    u, ref_universe, psf_path, aligned_dcd,
+                    u, ref_universe, psf_path, aligned_dcd, dcd_files,
                     sys_name, rep, data_out_dir, n_frames,
                 )
             finally:
@@ -863,42 +896,84 @@ def _export_metrics_for_universe(
     ref_universe: mda.Universe,
     psf_path: Path,
     aligned_dcd: Path,
+    dcd_files: list[Path],
     sys_name: str,
     rep: str,
     data_out_dir: Path,
     n_frames: int,
 ) -> None:
-    """Compute the full metric set on the aligned ``u`` and write CSVs / .npy."""
+    """Compute the metric set and write CSVs / .npy.
+
+    Two universes are used:
+
+    * ``u`` (the **aligned** trajectory) supplies the genuinely
+      alignment-dependent outputs only — RMSD, RMSF, DSSP, SASA and the radial
+      density profile.
+    * ``u_phys`` (built here from ``dcd_files`` with the same unwrap+center
+      transforms as the pre-align ``u_initial``) supplies **every PBC-sensitive
+      inter-chain metric** (salt bridges, residue contacts, contact map /
+      survival, MA NN / cluster) **and the H-bond networks**, plus the
+      intra-chain shape metrics (Rg, Ree, Lp).
+
+    Why: ``AlignTraj`` rotates coordinates **without** rotating the periodic
+    box, so any minimum-image distance on the aligned ``u`` folds cross-boundary
+    pairs to spurious sub-vdW distances (RDF showed g(r)≠0 at 0.15 Å; salt
+    bridges were under-counted ~5–15 %). ``unwrap()`` keeps each chain whole
+    (needed for intra-chain H-bonds / Rg) while leaving the box matched to the
+    coordinate frame (needed for valid inter-chain min-image). For these
+    short-range inter-chain contacts unwrap+center is numerically identical to
+    raw box-wrapped coords — only the rotation was the bug.
+
+    ``dcd_files`` are the RAW (un-transformed) trajectory chunks, used to build
+    ``u_phys`` here and (separately) the transform-free RDF universe.
+    """
+    # Aligned protein (rotation-fitted) — used ONLY for alignment-dependent
+    # outputs: SASA target indices + radial density profile.
     protein = u.select_atoms("protein")
     # Discover ALL protein chain segids dynamically (big-box systems have 12
     # chains GA–GL, not just GA/GB/GC). Hardcoding 3 chains silently dropped
     # 75% of the system from every per-chain metric and the RDF/contact-map
     # ensemble. ``segid`` slices include each chain's grafted LMA atoms too.
     protein_segids = sorted(set(protein.segids))
-    chains = {name: u.select_atoms(f"segid {name}") for name in protein_segids}
+
+    # PBC-correct physics universe: same unwrap+center transforms as the
+    # pre-align u_initial, but NOT rotated → minimum-image stays valid. All
+    # inter-chain PBC metrics, H-bonds and chain-shape metrics run on this.
+    u_phys = mda.Universe(str(psf_path), *[str(d) for d in dcd_files])
+    protein_phys = u_phys.select_atoms("(protein or resname LMA)")
+    u_phys.trajectory.add_transformations(
+        trans.unwrap(protein_phys),
+        trans.center_in_box(protein_phys, wrap=False),
+    )
+    chains = {name: u_phys.select_atoms(f"segid {name}") for name in protein_segids}
     log.info("[%s/%s] Discovered %d protein chains: %s",
              sys_name, rep, len(chains), ", ".join(protein_segids))
-    ma_atoms = u.select_atoms(f"resname {MA_RESNAME} and name {MA_REACTIVE_C}")
+    ma_atoms = u_phys.select_atoms(f"resname {MA_RESNAME} and name {MA_REACTIVE_C}")
     has_ma = len(ma_atoms) > 0
 
     log.info("[%s/%s] Backbone RMSD vs reference...", sys_name, rep)
     rmsd_per_chain = {
-        name: rms.RMSD(u, ref_universe, select=f"segid {name} and backbone").run().results.rmsd[:, 2]
+        name: rms.RMSD(u, ref_universe,
+                       select=f"segid {name} and (name N or name CA or name C or name O)").run().results.rmsd[:, 2]
         for name in chains
     }
 
     log.info("[%s/%s] Hydrogen-bond networks...", sys_name, rep)
-    hb_pw = _run_hbond_analysis(u, PROTEIN_DONOR_SEL, PROTEIN_HYDROGEN_SEL, WATER_O_SEL)
-    hb_pp = _run_hbond_analysis(u, PROTEIN_DONOR_SEL, PROTEIN_HYDROGEN_SEL, PROTEIN_ACCEPTOR_SEL)
-    hb_ma_out = _run_hbond_analysis(u, MA_DONOR_SEL, MA_HYDROGEN_SEL, WATER_O_SEL) if has_ma else np.array([])
-    hb_ma_in = _run_hbond_analysis(u, WATER_O_SEL, WATER_H_SEL, MA_ACCEPTOR_SEL) if has_ma else np.array([])
+    # H-bonds run on u_phys: AlignTraj's box-desync corrupts cross-boundary
+    # min-image (inter-chain + protein/MA–water), and intra-chain H-bonds need
+    # whole (unwrapped) chains. u_phys satisfies both.
+    hb_pw = _run_hbond_analysis(u_phys, PROTEIN_DONOR_SEL, PROTEIN_HYDROGEN_SEL, WATER_O_SEL)
+    hb_pp = _run_hbond_analysis(u_phys, PROTEIN_DONOR_SEL, PROTEIN_HYDROGEN_SEL, PROTEIN_ACCEPTOR_SEL)
+    hb_ma_out = _run_hbond_analysis(u_phys, MA_DONOR_SEL, MA_HYDROGEN_SEL, WATER_O_SEL) if has_ma else np.array([])
+    hb_ma_in = _run_hbond_analysis(u_phys, WATER_O_SEL, WATER_H_SEL, MA_ACCEPTOR_SEL) if has_ma else np.array([])
 
-    inter_hb, intra_hb = split_inter_intra(hb_pp, u, n_frames)
+    inter_hb, intra_hb = split_inter_intra(hb_pp, u_phys, n_frames)
     pw_hb_per_frame = count_hbonds_per_frame(hb_pw, n_frames)
     ma_wat_per_frame = count_hbonds_per_frame(hb_ma_out, n_frames) + count_hbonds_per_frame(hb_ma_in, n_frames)
 
     log.info("[%s/%s] Radial distribution functions...", sys_name, rep)
-    rdfs = _compute_rdfs(chains, has_ma)
+    # raw, transform-free coords for inter-chain RDF (valid PBC) — see _compute_rdfs
+    rdfs = _compute_rdfs(chains, has_ma, psf_path, dcd_files)
 
     log.info("[%s/%s] SASA (Shrake-Rupley, batch)...", sys_name, rep)
     # 'protein' keyword excludes the LMA residue (non-standard amino acid);
@@ -926,19 +1001,31 @@ def _export_metrics_for_universe(
     n_res_per_chain = len(chains[chain_names[0]].residues)
     cmap_ensemble = np.zeros((n_res_per_chain, n_res_per_chain))
 
-    first_ca = {n: c.select_atoms("name CA")[0] for n, c in chains.items()}
-    last_ca = {n: c.select_atoms("name CA")[-1] for n, c in chains.items()}
+    # residue-agnostic termini: each chain's first/last RESIDUE Cα, falling back to
+    # backbone N if that residue is LMA (no CA). Termini are normally standard, so
+    # this rarely differs — but keeps Ree correct if a chain end is modified.
+    def _term_atom(c, idx):
+        res = c.residues[idx]
+        ca = res.atoms.select_atoms("name CA")
+        return ca[0] if len(ca) else res.atoms.select_atoms("name N")[0]
+    first_ca = {n: _term_atom(c, 0) for n, c in chains.items()}
+    last_ca = {n: _term_atom(c, -1) for n, c in chains.items()}
 
     rows = []
     prev_pairs: set[tuple[int, int]] = set()
     persistence_per_chain: dict[str, list[float]] = {n: [] for n in chains}
 
     log.info("[%s/%s] Iterating %d frames for per-frame metrics...", sys_name, rep, n_frames)
-    for i, ts in enumerate(u.trajectory):
+    # Iterate u_phys (unwrap+center, box matched to coords) — NOT the aligned u.
+    # Every metric below is either a PBC inter-chain distance (needs valid
+    # min-image) or an intra-chain shape (needs whole chains); both hold on
+    # u_phys. Alignment-dependent outputs (RMSD/RMSF/DSSP/SASA) were already
+    # computed on the aligned u above and are indexed here by frame i.
+    for i, ts in enumerate(u_phys.trajectory):
         box = ts.dimensions
         time_ns = round(i * DT_PS / 1000.0, 4)
 
-        salt_bridges = count_salt_bridges(u, box)
+        salt_bridges = count_salt_bridges(u_phys, box)
         for cname, chain in chains.items():
             persistence_per_chain[cname].append(compute_persistence_length(chain))
 
@@ -998,6 +1085,12 @@ def _export_metrics_for_universe(
                 float(np.mean([persistence_per_chain[n][-1] for n in chains])), 3,
             ),
         })
+
+    # Done reading coordinates from u_phys; release its DCD handles (Windows).
+    try:
+        u_phys.trajectory.close()
+    except Exception:
+        pass
 
     df = pd.DataFrame(rows)
     if df.empty:

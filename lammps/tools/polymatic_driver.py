@@ -289,7 +289,11 @@ def main() -> int:
     prob = cfg.get("self_avoidance", True) and cfg.get("prob", 0.5) or cfg.get("prob", 0.5)
     prob = cfg.get("prob", 0.5)
     max_iter = cfg["iteration"]["max_iter"]
-    patience = cfg["iteration"].get("converge_when_new_bonds_below", 1)
+    # Stop only after this many CONSECUTIVE zero-new-bond iters (patience). The
+    # diffusion-enabled crosslink tail is intermittent (e.g. [6,0,0,2,3,...]), so
+    # a small patience truncates real late bonds. Default 10 (was a hardcoded 3);
+    # with max_iter=50 this means "run to 10 consecutive empty iters, else full 50".
+    patience_iters = cfg["iteration"].get("convergence_patience_iters", 10)
     seed = cfg.get("seed", 12345)
     rng = random.Random(seed)
 
@@ -338,8 +342,9 @@ def main() -> int:
 
         if not new:
             stale += 1
-            if stale >= max(1, 3):     # 3 consecutive empty iters → converged
-                print(f"[done] converged: no new bonds for {stale} iters")
+            if stale >= patience_iters:   # N consecutive empty iters → converged
+                print(f"[done] converged: no new bonds for {stale} iters "
+                      f"(patience={patience_iters})")
                 break
         else:
             stale = 0

@@ -87,7 +87,128 @@ def discover_replica_dirs(base_name: str) -> tuple[str, ...]:
 DT_PS: float = 100.0                # ps per dcd frame (dcdfreq 50000 × 2 fs)
 SMOOTHING_RATIO: float = 0.03       # Savitzky-Golay window = ratio × n_frames
 BLOCK_SIZE_NS: float = 5.0          # time-block size for stationarity check
-EQ_WINDOW_NS: float = 5.0           # last EQ_WINDOW_NS used as "equilibrium" sample
+EQ_WINDOW_NS: float = 5.0           # canonical last-5-ns equilibrium sample
+
+# =============================================================================
+# Trajectory parts to include in analysis
+# =============================================================================
+# Post-HYP-fix (2026-06-08): part 1 = extended equilibration window and is
+# dropped from every analysis pipeline. Production trajectories therefore
+# start at `system_npt_part2.dcd`. Change ANALYSIS_SKIP_PARTS here and all
+# DCD-consuming scripts (see list_production_dcds() below) follow.
+ANALYSIS_SKIP_PARTS: frozenset[int] = frozenset({1})
+
+
+def list_production_dcds(
+    output_dir: Path,
+    *,
+    skip_parts: frozenset[int] = ANALYSIS_SKIP_PARTS,
+) -> list[Path]:
+    """Return ``system_npt_part<N>.dcd`` paths in numeric order, excluding
+    ``skip_parts``.
+
+    Natural-sort (part2 < part10) is enforced because the legacy lexical
+    ``sorted(glob(...))`` reorders to part1/part10/part2/... once the
+    trajectory reaches part 10. Every analysis driver should consume the
+    output of this helper instead of calling glob directly so the
+    "drop part 1" convention is enforced from a single place.
+    """
+    import re
+    pat = re.compile(r"system_npt_part(\d+)\.dcd$")
+    pairs: list[tuple[int, Path]] = []
+    for p in output_dir.glob("system_npt_part*.dcd"):
+        m = pat.match(p.name)
+        if not m:
+            continue
+        part_n = int(m.group(1))
+        if part_n in skip_parts:
+            continue
+        pairs.append((part_n, p))
+    return [p for _, p in sorted(pairs)]
+
+
+def _resolve_output_dir(sys_or_output_dir: Path) -> Path:
+    """Accept either `<sys>/` or `<sys>/Output/`; return the Output dir.
+
+    Detection is by name (`.name == "Output"`) — keeps the helper callable
+    from any layer of the production tree.
+    """
+    return (sys_or_output_dir
+            if sys_or_output_dir.name == "Output"
+            else sys_or_output_dir / "Output")
+
+
+def load_production_universe(
+    sys_or_output_dir: Path,
+    *,
+    parts: str | int = "all",
+    skip_parts: frozenset[int] = ANALYSIS_SKIP_PARTS,
+    psf_name: str = "debug_1.psf",
+):
+    """Return an MDAnalysis ``Universe`` for a production system, with the
+    post-HYP-fix part-skip rule enforced.
+
+    Parameters
+    ----------
+    sys_or_output_dir
+        Either ``production/<sys>/`` (Output/ is auto-appended) or
+        ``production/<sys>/Output/`` itself.
+    parts
+        - ``"all"`` (default): every DCD that survives ``skip_parts``,
+          concatenated into one Universe.
+        - ``"last"``: only the latest DCD (largest part number) — useful
+          for single-frame extractors and end-of-trajectory analyses.
+        - ``int N``: just ``system_npt_part{N}.dcd``. Raises if N is in
+          ``skip_parts``.
+    skip_parts
+        Defaults to ``ANALYSIS_SKIP_PARTS`` (drops part 1). Pass
+        ``frozenset()`` to include every chunk.
+    psf_name
+        Override the default ``debug_1.psf`` topology filename.
+
+    Raises
+    ------
+    FileNotFoundError
+        If PSF is missing or zero DCDs survive the filter.
+    ValueError
+        If ``parts`` is an int that's also in ``skip_parts``, or any other
+        unrecognised value.
+
+    Notes
+    -----
+    MDAnalysis is imported lazily inside this function so that ``import
+    analysis_config`` stays cheap for plot scripts that never load a
+    trajectory.
+
+    NOT used by ``data_analysis.py`` because that driver needs an extra
+    mdtraj header validation pass (``_filter_readable_dcds``) to skip
+    DCDs that NAMD is still actively writing.
+    """
+    import MDAnalysis as mda
+
+    out = _resolve_output_dir(sys_or_output_dir)
+    psf = out / psf_name
+    if not psf.exists():
+        raise FileNotFoundError(f"missing PSF: {psf}")
+
+    dcds = list_production_dcds(out, skip_parts=skip_parts)
+    if isinstance(parts, int):
+        if parts in skip_parts:
+            raise ValueError(
+                f"requested parts={parts} is in skip_parts={sorted(skip_parts)}; "
+                "override skip_parts=frozenset() if you really need this chunk")
+        dcds = [p for p in dcds if p.stem == f"system_npt_part{parts}"]
+    elif parts == "last":
+        dcds = dcds[-1:] if dcds else []
+    elif parts != "all":
+        raise ValueError(
+            f"parts must be 'all', 'last', or an int; got {parts!r}")
+
+    if not dcds:
+        raise FileNotFoundError(
+            f"no DCDs under {out} (skip_parts={sorted(skip_parts)}, parts={parts!r})")
+
+    return mda.Universe(str(psf), *[str(d) for d in dcds])
 
 
 # =============================================================================
@@ -154,9 +275,14 @@ MA_REACTIVE_C: str = "C8"           # terminal vinyl C for MA-MA proximity
 # muddied the Gel2MA 67% rebound interpretation. We now restrict to
 # carbonyl/hydroxyl O plus the imidazole side-chain N (His ND1/NE2).
 # =============================================================================
-PROTEIN_DONOR_SEL: str = "protein and (name N* or name OG* or name OH*)"
-PROTEIN_HYDROGEN_SEL: str = "protein and (name H* or name HN* or type H*)"
-PROTEIN_ACCEPTOR_SEL: str = "protein and (name O* or name ND1 or name NE2 or type O*)"
+# 2026-06-03: include LMA so the methacrylated-Lys residue's backbone H-bonds are
+# counted in the polymer metrics. LMA is a non-standard residue → the bare `protein`
+# macro silently excluded it, undercounting protein H-bonds ∝ DS (see
+# _docs/METHOD_FIX_LOG_2026-06-03_LMA.md). CAVEAT: Hb_PW now includes LMA's MA-water
+# bonds, so Hb_MA_Wat_Total is a SUBSET of Hb_PW (overlap, not additive).
+PROTEIN_DONOR_SEL: str = "(protein or resname LMA) and (name N* or name OG* or name OH*)"
+PROTEIN_HYDROGEN_SEL: str = "(protein or resname LMA) and (name H* or name HN* or type H*)"
+PROTEIN_ACCEPTOR_SEL: str = "(protein or resname LMA) and (name O* or name ND1 or name NE2 or type O*)"
 
 # CHARMM TIP3 water: oxygen is "OH2", hydrogens are "H1"/"H2".
 WATER_O_SEL: str = "(resname TIP3 or resname WAT or resname HOH) and (name O* or type O*)"

@@ -34,20 +34,23 @@ NAMD_KEY_PRIORITY: tuple[str, ...] = ("namd3", "namd2", "namd")
 
 
 def discover_target_systems(root_dir: Path) -> tuple[str, ...]:
-    """Return BASE_SYSTEMS + any sibling directories matching ``<base>_rep<N>``.
+    """Return BASE_SYSTEMS + sibling dirs matching ``<base>_rep<N>`` or
+    ``<base>_c<conc>_<n>`` (the mechanics-arm concentration clones).
 
     Used by Workflow 2-B / 2-A / refresh-confs / nvt-thermo so adding a new
-    replica (via ``clone_subproject.py``) automatically gets picked up
-    without editing this file.
+    replica or concentration clone (via ``clone_subproject.py``) is picked up
+    without editing this file. ``--systems`` still lets callers target a subset.
     """
     found: list[str] = []
+    seen: set[str] = set()
     for base in BASE_SYSTEMS:
-        if (root_dir / base).is_dir():
-            found.append(base)
-        # Discover replicas like Gelatin_rep2, Gelatin_rep3, ...
-        for p in sorted(root_dir.glob(f"{base}_rep*")):
-            if p.is_dir():
-                found.append(p.name)
+        if (root_dir / base).is_dir() and base not in seen:
+            found.append(base); seen.add(base)
+        # Replicas (Gelatin_rep2, ...) and mechanics clones (Gel3MA_c10_0, ...).
+        for pattern in (f"{base}_rep*", f"{base}_c*"):
+            for p in sorted(root_dir.glob(pattern)):
+                if p.is_dir() and p.name not in seen:
+                    found.append(p.name); seen.add(p.name)
     return tuple(found)
 
 log = logging.getLogger(__name__)

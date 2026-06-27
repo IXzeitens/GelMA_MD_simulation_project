@@ -230,7 +230,7 @@ This:
 ```powershell
 cd ..\plot
 python data_collect.py     # rebuilds pre_crosslink_summary.csv
-python plot_merged.py      # M1, M2, M3 with N=2 error bars
+python plot_merge.py       # M1, M2, M3 with N=2 error bars
 ```
 
 If you used the per-subproject-as-system route (Phase 4 option 1), `data_collect.py` will produce **8 rows per metric** (one per subsystem). To get **N=2 ensemble means**, you'll need a small wrapper that groups by `ds_pct` and re-aggregates. Easiest: edit

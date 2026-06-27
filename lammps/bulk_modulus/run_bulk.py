@@ -38,9 +38,12 @@ SYSTEMS = ["Gelatin", "Gel1MA", "Gel2MA", "Gel3MA"]
 # 0 / 1 / 2 / 3 MA per 24-res chain (3 LYS sites), expressed as % of LYS modified
 DS_PCT = {"Gelatin": 0.0, "Gel1MA": 33.3, "Gel2MA": 66.7, "Gel3MA": 100.0}
 
-# Production pressures (bar). 1 bar reference + three at higher P to give a
-# clear linear slope. Avoid negative pressure (cavitation risk).
-DEFAULT_PRESSURES = [1.0, 500.0, 1000.0, 2000.0]
+# Production pressures (bar) — matched to Chiu 2026 §2.6 (1 atm, 1, 10, 25 MPa)
+# so the P–V slope K is directly comparable AND stays in the linear-elastic
+# regime (the old 500–2000 bar = 50–200 MPa risked non-linear compression,
+# corrupting the slope). 1 MPa = 10 bar.
+#   1 atm ≈ 1 bar | 1 MPa = 10 bar | 10 MPa = 100 bar | 25 MPa = 250 bar
+DEFAULT_PRESSURES = [1.0, 10.0, 100.0, 250.0]
 
 
 def wsl_path(p: Path) -> str:
@@ -242,12 +245,14 @@ def analyze(results_dir: Path) -> None:
             import matplotlib.pyplot as plt
             ds = [r["DS_pct"] for r in summary_rows]
             K  = [r["K_MPa"] for r in summary_rows]
+            # Chiu 2026 (Carbohydr. Polym. Technol. Appl. 13:101057) Fig 7,
+            # 20% concentration, post-crosslink P–V-slope bulk modulus (MPa).
             chiu_ds = [16.7, 33.3, 50.0]
             chiu_K  = [2824, 2970, 2845]
             fig, ax = plt.subplots(figsize=(5, 4))
-            ax.plot(ds, K, "o-", label="this work (pre-network)")
+            ax.plot(ds, K, "o-", label="this work")
             ax.plot(chiu_ds, chiu_K, "s--", color="gray",
-                    label="Chiu 2024 (post-crosslink GGMA)")
+                    label="Chiu 2026 (post-crosslink GGMA, 20%)")
             ax.set_xlabel("Degree of substitution (%)")
             ax.set_ylabel("Bulk modulus K (MPa)")
             ax.set_title("Pre-network bulk modulus vs DS")

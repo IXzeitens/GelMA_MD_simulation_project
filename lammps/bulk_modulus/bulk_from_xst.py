@@ -185,7 +185,7 @@ def main() -> int:
         K    = [r["K_blockmean_MPa"] for r in rows]
         Kerr = [r["K_blockstd_MPa"] for r in rows]
 
-        THIS_COLOR = "#1e3f6e"   # matches DS=100 dark blue in plot_merged.DS_COLORS
+        THIS_COLOR = "#1e3f6e"   # matches DS=100 dark blue in plot_merge.DS_COLORS
 
         fig, ax = plt.subplots(figsize=(5.8, 4.0))
 
